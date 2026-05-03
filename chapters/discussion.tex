@@ -1,0 +1,105 @@
+\chapter{Discussion \& Future Work}
+\phantomsection
+\label{ch:discussion}
+
+\vspace{-1cm}
+\setlength{\parindent}{0pt}
+\vspace{0.3cm}
+
+\section{Effectiveness of Synthetic Data}
+\label{sec:effectiveness}
+
+{\englishfont\fontsize{13.5pt}{17pt}\selectfont
+
+The effectiveness of synthetic data in training our OCR system has been demonstrated 
+through several key findings. Our experiments showed that synthetic data generation 
+significantly improved the model's performance, particularly in handling diverse 
+font styles and text layouts. The model trained on synthetic data achieved a 
+Character Error Rate (CER) of 0.12, which is 
+comparable to state-of-the-art results in similar OCR tasks.
+
+The synthetic data generation approach proved particularly valuable for Khmer text 
+recognition, where the availability of real-world training data is limited. 
+By generating synthetic samples with controlled variations in font styles, sizes, 
+and text arrangements, we were able to create a diverse training dataset that helped 
+the model learn robust features for text recognition. This is evidenced by the model's 
+ability to generalize to on real world dataset, and different font styles despite being trained 
+on only 20 different fonts.
+
+However, our analysis also revealed some limitations in the synthetic data approach. 
+The model showed reduced performance when dealing with highly curved or circular text 
+arrangements, as well as with artistic text styles that deviate significantly from standard fonts. 
+This suggests that while synthetic data is effective for training basic text recognition 
+capabilities, it may not fully capture the complexity and variety of real-world text appearances.
+
+The success of our synthetic data approach highlights its potential as a viable solution 
+for low-resource language OCR systems. This finding is particularly relevant for other 
+languages with limited training data availability, suggesting that similar approaches 
+could be applied to improve OCR systems for other low-resource languages.
+
+\section{Strengths and Limitations of the OCR System}
+\label{sec:strengths}
+
+Our OCR system demonstrates several significant strengths that make it particularly effective for real-world 
+applications. The most notable achievement is its robust bilingual capabilities, successfully handling both Khmer 
+and English text with high accuracy. This dual-language support is crucial for processing mixed-language documents 
+commonly found in Cambodian contexts.
+
+The system's versatility in text processing is another major strength. It effectively handles various text formats, including:
+\begin{itemize}
+    \item Character-by-character recognition
+    \item Word-by-word processing
+    \item Complete sentence recognition up to 125 characters
+\end{itemize}
+
+This flexibility allows the system to adapt to different document types and text arrangements, making it suitable 
+for a wide range of applications. The model's robustness is particularly evident in its ability to maintain high 
+accuracy across different font styles and text layouts, as demonstrated in our evaluation results.
+
+However, the system does have some limitations that should be acknowledged. The maximum sentence length constraint 
+of 125 characters may restrict its application in processing longer text segments. Additionally, while the system 
+performs well with standard text formats, it shows reduced accuracy when dealing with highly stylized or artistic 
+text arrangements. These limitations highlight areas for potential improvement in future iterations of the system.
+
+
+\section{Research Challenges and Lessons Learned}
+\label{sec:challenges}
+
+Throughout this research, we encountered several significant challenges that provided valuable lessons 
+for future work in Khmer OCR development. One of the most critical challenges was the iterative nature of 
+model training and testing. Initially, we trained the model on our first version of the dataset, only to 
+discover during testing that it failed to handle certain test cases. This necessitated multiple retraining cycles, 
+with each training iteration taking approximately 4-6 days due to the large dataset size. This experience 
+highlighted the importance of comprehensive test case definition before beginning the training process.
+
+A key lesson learned was the necessity of establishing a complete set of test cases prior to model training. 
+This would have allowed us to identify and address potential issues earlier in the development process, 
+potentially reducing the number of required training iterations. In our case, we had to retrain the model 
+approximately 20 times to achieve satisfactory performance across all test cases, which was both time-consuming 
+and computationally expensive.
+
+Another crucial insight was the fundamental importance of dataset preparation in deep learning research. 
+While modern model architectures continue to advance rapidly, the lack of high-quality, comprehensive datasets 
+remains a significant barrier to progress in many domains, including Khmer OCR. This research demonstrated that 
+the availability and quality of training data often play a more critical role in model performance than the choice 
+of architecture itself. The challenge of collecting and preparing appropriate datasets for low-resource languages 
+like Khmer represents a major obstacle to advancing research in these areas.
+
+These challenges and lessons learned emphasize the need for a more systematic approach to dataset preparation 
+and test case definition in OCR development, particularly for low-resource languages. Future should prioritize 
+the establishment of comprehensive testing \& high-quality datasets before embarking on extensive model 
+training efforts.
+
+\section{Future Work Khmer \& English OCR}
+\label{sec:impact}
+Discussion of the broader implications of this work for Khmer language technology and OCR research in general.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/future_work.png}
+    \caption{Enhance the model’s capability to handle Khmer handwritten text, text found on street signs or posters, and curved text such as those on logos or public displays.}
+    \label{fig:future_work}
+\end{figure}
+
+
+}

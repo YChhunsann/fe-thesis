@@ -1,0 +1,412 @@
+\chapter{API Development}
+\phantomsection
+\label{ch:development}
+
+{\englishfont\fontsize{13.5pt}{17pt}\selectfont
+
+\vspace{-1cm}
+\setlength{\parindent}{0pt}
+\vspace{0.3cm}
+
+\section{Introduction to API Development}
+\label{sec:api-introduction}
+
+The transition from research prototype to production-ready system represents a critical phase in making OCR technology accessible to real-world applications. While many academic research projects remain confined to laboratory settings, this work aims to bridge the gap between theoretical advancement and practical deployment. By developing a robust API (Application Programming Interface) for our Khmer-English OCR system, we enable seamless integration into various applications, from mobile apps to web services and enterprise systems.
+
+The development of this API serves multiple purposes: it validates the practical utility of our research findings, provides a standardized interface for accessing OCR capabilities, and creates a foundation for broader adoption of Khmer text processing technology. This chapter details the architectural decisions, implementation challenges, and deployment strategies that transform our research models into a production-ready service.
+
+\section{System Architecture Overview}
+\label{sec:system-architecture}
+
+\subsection{Microservices Architecture}
+\label{subsec:microservices}
+
+Our API implementation follows a microservices architecture pattern, separating the text detection and text recognition components into distinct, scalable services. This design choice offers several advantages:
+
+\begin{itemize}
+\item \textbf{Independent scaling}: Text detection and recognition services can be scaled independently based on demand
+\item \textbf{Fault isolation}: Issues in one service don't affect the entire system. However, if one system down the another system can't be work alone, but following this way it's easily for debugging and update the issues.
+\item \textbf{Technology flexibility}: Each service can be optimized with different frameworks and configurations
+\end{itemize}
+
+\subsection{Service Components}
+\label{subsec:service-components}
+
+The API architecture consists of two primary components:
+
+\begin{enumerate}
+\item \textbf{CRAFT Text Detection Service}: Implements the CRAFT model for identifying text regions in images.
+\item \textbf{TrOCR Text Recognition Service}: Utilizes the customized TrOCR model for converting detected text regions into digital text
+\end{enumerate}
+
+\subsection{Data Flow Pipeline}
+\label{subsec:data-flow}
+
+The complete OCR pipeline processes requests through the following stages:
+
+\begin{enumerate}
+\item \textbf{Image Reception}: Services receive image data via HTTP POST requests
+\item \textbf{Preprocessing}: Images are validated, normalized, and prepared for processing
+\item \textbf{Text Detection}: The CRAFT service identifies and extracts text-line bounding boxes
+\item \textbf{Region Extraction}: Individual text regions are cropped based on detection results
+\item \textbf{Text Recognition}: Each text region is processed by the TrOCR service
+\item \textbf{Post-processing}: Results are assembled, ordered, and formatted for response
+\item \textbf{Response Delivery}: Final OCR results are returned to the client
+\end{enumerate}
+
+\section{CRAFT Text Detection API Service}
+\label{sec:craft-api}
+
+\subsection{Service Implementation}
+\label{subsec:craft-implementation}
+
+The CRAFT text detection service is implemented using FastAPI, a modern Python web framework chosen for its automatic API documentation generation, built-in data validation, and high performance. The service runs on GPU-enabled containers with NVIDIA CUDA support.
+
+\subsubsection*{Main Application Structure}
+
+\begin{verbatim}
+def main():
+    # FastAPI app initialization
+    app = FastAPI(title="CRAFT Text Detection API")
+
+    # CORS middleware setup
+    # Model loading and GPU configuration
+    # API endpoint definitions
+
+def load_model(model_path, device):
+    # Load CRAFT model from checkpoint
+    # Apply state dict and move to GPU
+    # Set model to evaluation mode
+
+def predict_endpoint(file):
+    # Save uploaded image temporarily
+    # Convert image format (BGR or RGB to Grayscale Color)
+    # Run CRAFT inference
+    # Apply bounding box adjustments
+    # Format and return results
+    # Clean up temporary files
+
+\end{verbatim}
+
+\subsubsection*{Input and Output Specifications}
+
+\textbf{Input Requirements:}
+\begin{itemize}
+\item \textbf{Endpoint}: \texttt{POST /predict}
+\item \textbf{Input}: Image file (JPEG, PNG, supported formats)
+\item \textbf{File size}: Recommended under 3MB for optimal performance
+\item \textbf{Image format}: Automatically converted to RGB format internally
+\end{itemize}
+
+\textbf{Output Format:}
+The service API returns as JSON responses with detected text regions as 4-point polygons that is easily for passing to another pipeline:
+
+    \begin{verbatim}
+    {
+    "boxes": [
+        {
+        "box": [
+            [x1, y1], [x2, y2], [x3, y3], [x4, y4]
+        ]
+        }
+    ]
+    }
+    \end{verbatim}
+
+\subsection{Model Configuration and Optimization}
+\label{subsec:craft-config}
+
+\subsubsection*{CRAFT Detection Parameters}
+
+The service uses optimized detection parameters:
+\begin{itemize}
+\item \textbf{Text threshold}: 0.7 (region score threshold)
+\item \textbf{Link threshold}: 0.5 (affinity score threshold)
+\item \textbf{Low text threshold}: 0.4 (handles small/faint text)
+\item \textbf{Canvas size}: 2540 (processing resolution)
+\item \textbf{Magnification ratio}: 1.5 (image scaling factor)
+\end{itemize}
+
+\subsubsection*{Bounding Box Post-processing}
+
+A unique feature of our implementation is the automatic margin adjustment to improve recognition accuracy:
+
+\begin{verbatim}
+def adjust_bounding_boxes(polygons):
+    # Calculate average height of text region
+    # Compute 15% margin expansion
+    # Determine horizontal direction vectors
+    # Expand left and right boundaries
+    # Return adjusted coordinates
+\end{verbatim}
+
+\subsection{Docker Containerization}
+\label{subsec:craft-docker}
+
+\subsubsection*{Dockerfile Configuration}
+
+The CRAFT service uses NVIDIA CUDA base image for GPU support:
+
+\begin{verbatim}
+# Key Dockerfile components
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+# System dependencies installation
+RUN apt-get update && install python3.10, opencv libraries
+
+# PyTorch installation with CUDA support
+RUN pip install torch torchvision --index-url pytorch.org/whl/cu118
+
+# Application setup and requirements
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+
+EXPOSE 5362
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5362"]
+\end{verbatim}
+
+\subsubsection*{Docker Compose Configuration}
+
+\begin{verbatim}
+# docker-compose.yml structure
+version: '3.8'
+services:
+  craft-api:
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    ports:
+      - "5362:5362"
+\end{verbatim}
+
+\section{TrOCR Text Recognition API Service}
+\label{sec:trocr-api}
+
+\subsection{Service Architecture}
+\label{subsec:trocr-architecture}
+
+The TrOCR recognition service handles the conversion of detected text regions into digital text using transformer architecture with custom Khmer support.
+
+\subsubsection*{Main Application Structure}
+
+\begin{verbatim}
+def main():
+    # FastAPI app initialization
+    # CORS middleware configuration
+    # Global model and processor variables
+def startup_event():
+    # Load custom Khmer tokenizer
+    # Initialize TrOCR processor
+    # Load pre-trained model from checkpoint
+    # Move model to GPU and optimize
+def recognize_single_image(file):
+    # Decode uploaded image to RGB
+    # Handle different image formats
+    # Preprocess using custom processor
+    # Generate text with beam search
+    # Clean and format output
+def recognize_batch_images(files):
+    # Load and resize multiple images
+    # Process images in efficient batches
+    # Generate text for entire batch
+    # Return structured results array
+
+\end{verbatim}
+
+\subsection{Custom Processor Integration}
+\label{subsec:custom-processor}
+
+The service integrates our custom Khmer tokenizer for handling mixed-language content:
+
+\begin{verbatim}
+def setup_custom_processor():
+    # Load base TrOCR processor
+    # Initialize custom Khmer tokenizer
+    # Create custom processor wrapper
+def clean_decoded_text(raw_text):
+    # Extract text between special tokens
+    # Remove formatting artifacts
+    # Return cleaned text string 
+\end{verbatim}
+\subsection{Input and Output Specifications}
+\label{subsec:trocr-io}
+\textbf{Available Endpoints:}
+\begin{itemize}
+\item \textbf{Single Image}: \texttt{POST /ocr/printed/}
+\item \textbf{Batch Processing}: \texttt{POST /ocr/batch/printed/}
+\end{itemize}
+
+\textbf{Output Format:}
+\begin{verbatim}
+{
+  "filename": "image.jpg",
+  "type": "printed",
+  "raw_text": "<s>Hello World</s>",
+  "text": "Hello World"
+}
+\end{verbatim}
+
+\subsection{Docker Deployment}
+\label{subsec:trocr-docker}
+
+\subsubsection*{Container Specifications}
+
+\begin{verbatim}
+# Dockerfile structure
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+# Extended system dependencies for transformers
+RUN apt-get install build-essential, libcairo2-dev, 
+    gobject-introspection libraries
+# PyTorch and transformers installation
+RUN pip install torch torchvision transformers
+# Application configuration
+WORKDIR /app # Create working directory path
+COPY . . # Copy all file and data to the image
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+\end{verbatim}
+
+
+\subsection{API Performance Evaluation}
+\label{subsec:api-performance-evaluation}
+
+
+To assess the practical viability of our OCR system in production environments, we conducted 
+comprehensive performance evaluations of both individual services and the complete end-to-end 
+pipeline. The evaluation focused on key metrics including throughput (Requests Per Second), 
+latency, and scalability under varying load conditions.
+
+
+\begin{table}[H]
+    \centering
+    \caption{Report of API Performance on CRAFT model. }
+    \renewcommand{\arraystretch}{1.5}
+    \begin{tabular}{|p{3.5cm}|p{3.5cm}|p{1.5cm}|p{3.0cm}|p{2.7cm}|}
+    \hline
+    \textbf{Boxes/Image} & \textbf{Concurent User} & \textbf{RPS} & \textbf{Avg Latency} & \textbf{Image Size}\\
+    \hline
+    2 bounding boxes & 5 & 128.32 & 25 ms & 449x80\\
+    \hline
+    14 bounding boxes & 5 & 13.36 & 272 ms & 752x615\\
+    \hline
+    14 bounding boxes & 10 & 13.76 & 412 ms & 752x615\\
+    \hline
+    32 bounding boxes & 10 & 8.67 & 636 ms & 687x835\\
+    \hline
+    34 bounding boxes & 2 & 10.93 & 133 ms & 603x812\\
+    \hline
+    71 bounding boxes & 2 & 8.73 & 171 ms  & 713x692\\
+    \hline
+    71 bounding boxes & 10 & 8.78 & 608 ms & 713x692\\
+    \hline
+    80 bounding boxes & 5 & 8.15 & 359 ms & 614x766\\
+    \hline
+    \end{tabular}
+    \label{tab:api_craft_performance_evaluation}
+\end{table}
+
+
+\begin{table}[H]
+    \centering
+    \caption{Report of API Performance Full Pipeline: CRAFT + TrOCR model. }
+    \renewcommand{\arraystretch}{1.5}
+    \begin{tabular}{|p{3.5cm}|p{3.0cm}|p{3.0cm}|p{3.0cm}|p{1.7cm}|}
+    \hline
+    \textbf{Boxes/Image} & \textbf{Concurent User} & \textbf{RPS} & \textbf{Avg Latency} & \textbf{Batch}\\
+    \hline
+    1 bounding box & 2 & 2.25 & 668 ms & No\\
+    \hline
+    1 bounding box & 10 & 1.93 & 3201 ms & No\\
+    \hline
+    2 bounding boxes & 2 & 1.79 & 849 ms & No\\
+    \hline
+    2 bounding boxes & 2 & 1.71 & 1170 ms & Yes\\
+    \hline
+    2 bounding boxes & 10 & 1.22 & 8211 ms & No\\
+    \hline
+    2 bounding boxes & 10 & 1.39 & 7967 ms  & Yes\\
+    \hline
+    3 bounding boxes & 10 & 1.14 & 8803 ms & No\\
+    \hline
+    3 bounding boxes & 10 & 1.58 & 8243 ms & Yes\\
+    \hline
+    \end{tabular}
+    \label{tab:api_performance_evaluation}
+\end{table}
+
+
+The performance evaluation reveals a clear distinction between the two pipeline components in terms of production readiness. The {\englishfont\selectfont CRAFT} text detection service demonstrates excellent production-ready characteristics, achieving high throughput (8 to 128 RPS) with consistently low latency even under varying image complexity and concurrent loads. This performance profile makes it highly suitable for real-world deployment scenarios requiring responsive text localization.
+
+However, the {\englishfont\selectfont CRAFT + TrOCR} text detection and recognition component presents significant challenges for high-throughput production environments. The autoregressive nature of the model, which generates text token-by-token, inherently limits processing speed and creates scalability bottlenecks. With throughput ranging from 1 to 2 RPS for the complete pipeline, the recognition stage becomes the primary limiting factor for overall system performance.
+
+\vspace{0.5cm}
+
+The current {\englishfont\selectfont TrOCR} implementation uses full-precision ({\englishfont\selectfont FP32}) computations, which prioritize accuracy over speed. Several optimization strategies could significantly improve inference performance:
+
+\begin{itemize}
+    \item \textbf{Mixed Precision Inference (FP16):} Could potentially double inference speed with minimal accuracy loss.
+    \item \textbf{Quantization (INT8):} May achieve 2 to 4$\times$ speedup but requires careful evaluation of accuracy trade-offs.
+    \item \textbf{Model Distillation:} Training smaller, faster models while maintaining acceptable accuracy.
+    \item \textbf{Non-autoregressive Architectures:} Exploring parallel text generation approaches for faster inference.
+\end{itemize}
+
+
+The decision to optimize for speed versus accuracy depends heavily on the specific application requirements. For applications where accuracy is paramount such as digitizing historical documents, legal texts, or academic materials the current {\englishfont\selectfont FP32} implementation may be entirely appropriate despite slower processing speeds.
+
+Conversely, applications requiring real-time processing, such as mobile OCR apps or high-volume document processing systems, would benefit significantly from the optimization strategies mentioned above.
+
+\vspace{0.3cm}
+\noindent
+The current system provides a solid foundation for production deployment, with the text detection component ready for immediate high-throughput use and the recognition component suitable for accuracy-critical applications where processing speed is less critical.
+
+
+\section{End-to-End Pipeline Integration}
+\label{sec:pipeline-integration}
+
+\subsection{Service Orchestration}
+\label{subsec:orchestration}
+
+While deployed as independent services, they can be orchestrated for complete OCR processing:
+
+\begin{verbatim}
+def process_image_complete(image_path):
+    # Send image to CRAFT detection service
+    # Extract bounding box coordinates
+    # Crop text regions from original image
+    # Send regions to TrOCR recognition service
+    # Collect and order recognition results
+    # Assemble final document text
+
+
+def crop_image_regions(image, bounding_boxes):
+    # Extract individual text regions
+    # Apply proper coordinate transformations
+    # Return list of cropped images
+
+\end{verbatim}
+
+\section{Deployment and Production Considerations}
+\label{sec:deployment}
+
+\subsection{Hardware Requirements}
+\label{subsec:hardware}
+
+\begin{itemize}
+\item \textbf{GPU Memory}: Minimum 8GB VRAM per service
+\item \textbf{CUDA Version}: 11.8 or higher compatibility
+\item \textbf{System Memory}: 16GB+ RAM recommended
+\item \textbf{Storage}: SSD for efficient model loading
+\end{itemize}
+
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+The development of production-ready APIs for our Khmer-English OCR system successfully bridges the gap between academic research and practical application. By implementing robust, scalable services using modern containerization and deployment practices, we enable widespread adoption of advanced Khmer text processing technology.
+
+This API development effort demonstrates that sophisticated OCR capabilities can be made accessible to developers, businesses, and organizations without requiring deep technical expertise in machine learning. The resulting system provides a foundation for numerous applications, contributing to the digital transformation of Khmer language processing and serving as a model for other research projects seeking to maximize their practical impact.
+
+}

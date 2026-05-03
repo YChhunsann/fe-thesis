@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Code Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.23.4/ace.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.23.4/mode-latex.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.23.4/theme-monokai.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col">
+    <!-- Header -->
+    <div class="bg-gray-800 p-3 flex justify-between items-center border-b border-gray-700">
+        <h1 class="text-xl font-bold">Web Code Editor</h1>
+        <div class="flex items-center space-x-4">
+            <span id="current-file" class="text-gray-300">No file selected</span>
+            <button id="save-btn" disabled 
+                    class="bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:cursor-not-allowed px-4 py-2 rounded text-sm">
+                Save
+            </button>
+            <a href="/logout" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm">Logout</a>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Left Panel - File Browser -->
+        <div class="w-1/5 bg-gray-800 border-r border-gray-700 overflow-y-auto" 
+             ondragover="handleDragOver(event)" 
+             ondrop="handleDrop(event, '')">
+            <div class="p-3 border-b border-gray-700">
+                <h3 class="font-semibold">Files</h3>
+                <div class="text-xs text-gray-400 mt-1">Drag files here to upload</div>
+            </div>
+            <div id="file-tree" class="p-2"></div>
+        </div>
+
+        <!-- Middle Panel - Code Editor -->
+        <div class="w-2/5 flex flex-col">
+            <div class="p-3 bg-gray-800 border-b border-gray-700">
+                <h3 class="font-semibold">Editor</h3>
+            </div>
+            <div id="editor" class="flex-1"></div>
+        </div>
+
+        <!-- Right Panel - PDF Viewer -->
+        <div class="w-2/5 bg-gray-800 border-l border-gray-700 flex flex-col">
+            <div class="p-3 border-b border-gray-700">
+                <h3 class="font-semibold">PDF Preview</h3>
+            </div>
+            <div class="flex-1 p-2 relative">
+                <div id="pdf-loading" class="absolute inset-0 flex items-center justify-center bg-gray-800 hidden">
+                    <div class="text-center">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                        <div class="text-gray-300">Compiling LaTeX...</div>
+                    </div>
+                </div>
+                <iframe id="pdf-viewer" src="/api/pdf" class="w-full h-full border border-gray-600 rounded"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Preview Modal -->
+    <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-75 hidden z-50 flex items-center justify-center">
+        <div class="max-w-4xl max-h-4xl p-4">
+            <div class="relative">
+                <img id="modal-image" src="" alt="" class="max-w-full max-h-full">
+                <button onclick="closeImageModal()" 
+                        class="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-8 h-8 flex items-center justify-center">
+                    ×
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="fixed bg-gray-700 border border-gray-600 rounded shadow-lg py-1 hidden z-50">
+        <button id="delete-file" class="w-full text-left px-4 py-2 hover:bg-gray-600 text-red-400">Delete</button>
+    </div>
+
+    <!-- Password Modal for Delete -->
+    <div id="password-modal" class="fixed inset-0 bg-black bg-opacity-75 hidden z-50 flex items-center justify-center">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+            <h3 class="text-lg font-bold text-white mb-4">Confirm Delete</h3>
+            <p class="text-gray-300 mb-4">Enter password to delete: <span id="delete-target" class="text-yellow-400"></span></p>
+            <input type="password" id="delete-password" placeholder="Enter password" 
+                   class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-red-500 mb-4">
+            <div class="flex justify-end space-x-3">
+                <button onclick="closePasswordModal()" 
+                        class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
+                <button onclick="confirmDelete()" 
+                        class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded">Delete</button>
+            </div>
+            <div id="delete-error" class="text-red-400 text-sm mt-2 hidden"></div>
+        </div>
+    </div>
+
+    <script>
+        let editor;
+        let currentFile = null;
+        let isModified = false;
+        let selectedFileForContextMenu = null;
+
+        // Initialize ACE editor
+        function initEditor() {
+            editor = ace.edit("editor");
+            editor.setTheme("ace/theme/monokai");
+            editor.session.setMode("ace/mode/latex");
+            editor.setOptions({
+                fontSize: 14,
+                wrap: true,
+                autoScrollEditorIntoView: true
+            });
+
+            editor.session.on('change', function() {
+                if (currentFile) {
+                    isModified = true;
+                    document.getElementById('save-btn').disabled = false;
+                    document.getElementById('current-file').textContent = currentFile + ' (modified)';
+                }
+            });
+        }
+
+        // Load file tree
+        async function loadFileTree() {
+            try {
+                const response = await fetch('/api/files');
+                const files = await response.json();
+                renderFileTree(files, document.getElementById('file-tree'));
+            } catch (error) {
+                console.error('Error loading file tree:', error);
+            }
+        }
+
+        // Render file tree recursively
+        function renderFileTree(items, container, level = 0) {
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = `cursor-pointer hover:bg-gray-700 p-1 rounded ${level > 0 ? 'ml-' + (level * 4) : ''}`;
+                
+                if (item.type === 'directory') {
+                    div.innerHTML = `
+                        <div class="flex items-center" ondragover="handleDragOver(event)" ondrop="handleDrop(event, '${item.path}')">
+                            <span class="mr-2">📁</span>
+                            <span>${item.name}</span>
+                        </div>
+                    `;
+                    div.addEventListener('contextmenu', (e) => showContextMenu(e, item.path, item.type));
+                    container.appendChild(div);
+                    
+                    const childContainer = document.createElement('div');
+                    childContainer.className = 'ml-4';
+                    container.appendChild(childContainer);
+                    renderFileTree(item.children, childContainer, level + 1);
+                } else {
+                    const isImage = /\.(jpg|jpeg|png|gif|bmp|svg)$/i.test(item.name);
+                    div.innerHTML = `
+                        <div class="flex items-center">
+                            <span class="mr-2">${isImage ? '🖼️' : '📄'}</span>
+                            <span>${item.name}</span>
+                        </div>
+                    `;
+                    
+                    if (isImage) {
+                        div.addEventListener('click', () => showImageModal(item.path));
+                    } else {
+                        div.addEventListener('click', () => loadFile(item.path));
+                    }
+                    
+                    div.addEventListener('contextmenu', (e) => showContextMenu(e, item.path, item.type));
+                    container.appendChild(div);
+                }
+            });
+        }
+
+        // Load file content
+        async function loadFile(filePath) {
+            try {
+                const response = await fetch(`/api/file/${filePath}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                
+                currentFile = filePath;
+                isModified = false;
+                editor.setValue(data.content, -1);
+                document.getElementById('current-file').textContent = filePath;
+                document.getElementById('save-btn').disabled = false;
+                
+                // Set appropriate mode based on file extension
+                const extension = filePath.split('.').pop().toLowerCase();
+                if (extension === 'tex') {
+                    editor.session.setMode("ace/mode/latex");
+                } else if (extension === 'py') {
+                    editor.session.setMode("ace/mode/python");
+                } else if (extension === 'js') {
+                    editor.session.setMode("ace/mode/javascript");
+                } else if (extension === 'html') {
+                    editor.session.setMode("ace/mode/html");
+                }
+            } catch (error) {
+                console.error('Error loading file:', error);
+                alert('Error loading file');
+            }
+        }
+
+        // Save file
+        async function saveFile() {
+            if (!currentFile) return;
+            
+            try {
+                // Show loading animation for .tex files
+                const isTexFile = currentFile.endsWith('.tex');
+                if (isTexFile) {
+                    document.getElementById('pdf-loading').classList.remove('hidden');
+                    document.getElementById('pdf-viewer').style.display = 'none';
+                }
+                
+                const response = await fetch(`/api/file/${currentFile}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        content: editor.getValue()
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    isModified = false;
+                    document.getElementById('current-file').textContent = currentFile;
+                    document.getElementById('save-btn').disabled = true;
+                    
+                    // For .tex files, wait longer for compilation then refresh PDF
+                    if (isTexFile) {
+                        setTimeout(() => {
+                            refreshPdfWithRetry();
+                        }, 8000); // Wait 8 seconds for compilation
+                    }
+                } else {
+                    if (isTexFile) {
+                        document.getElementById('pdf-loading').classList.add('hidden');
+                        document.getElementById('pdf-viewer').style.display = 'block';
+                    }
+                    alert('Error saving file: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error saving file:', error);
+                if (currentFile && currentFile.endsWith('.tex')) {
+                    document.getElementById('pdf-loading').classList.add('hidden');
+                    document.getElementById('pdf-viewer').style.display = 'block';
+                }
+                alert('Error saving file');
+            }
+        }
+
+        // Image modal functions
+        function showImageModal(imagePath) {
+            const modal = document.getElementById('image-modal');
+            const modalImage = document.getElementById('modal-image');
+            modalImage.src = `/api/image/${imagePath}`;
+            modal.classList.remove('hidden');
+        }
+
+        function closeImageModal() {
+            document.getElementById('image-modal').classList.add('hidden');
+        }
+
+        // Context menu functions
+        function showContextMenu(event, filePath, fileType) {
+            event.preventDefault();
+            selectedFileForContextMenu = { path: filePath, type: fileType };
+            
+            const contextMenu = document.getElementById('context-menu');
+            contextMenu.style.left = event.pageX + 'px';
+            contextMenu.style.top = event.pageY + 'px';
+            contextMenu.classList.remove('hidden');
+        }
+
+        function hideContextMenu() {
+            document.getElementById('context-menu').classList.add('hidden');
+        }
+
+        // Delete file function - show password modal
+        function deleteFile() {
+            if (!selectedFileForContextMenu) return;
+            
+            document.getElementById('delete-target').textContent = selectedFileForContextMenu.path;
+            document.getElementById('delete-password').value = '';
+            document.getElementById('delete-error').classList.add('hidden');
+            document.getElementById('password-modal').classList.remove('hidden');
+            document.getElementById('delete-password').focus();
+            
+            hideContextMenu();
+        }
+
+        // Close password modal
+        function closePasswordModal() {
+            document.getElementById('password-modal').classList.add('hidden');
+        }
+
+        // Confirm delete with password
+        async function confirmDelete() {
+            const password = document.getElementById('delete-password').value;
+            const errorDiv = document.getElementById('delete-error');
+            
+            if (!password) {
+                errorDiv.textContent = 'Password is required';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/file/${selectedFileForContextMenu.path}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    closePasswordModal();
+                    loadFileTree(); // Refresh file tree
+                    if (currentFile === selectedFileForContextMenu.path) {
+                        currentFile = null;
+                        editor.setValue('', -1);
+                        document.getElementById('current-file').textContent = 'No file selected';
+                        document.getElementById('save-btn').disabled = true;
+                    }
+                } else {
+                    errorDiv.textContent = data.error;
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error deleting file:', error);
+                errorDiv.textContent = 'Error deleting file';
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        // Drag and drop functions
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+        }
+
+        function handleDrop(event, targetPath) {
+            event.preventDefault();
+            const files = event.dataTransfer.files;
+            
+            for (let file of files) {
+                uploadFile(file, targetPath);
+            }
+        }
+
+        async function uploadFile(file, targetPath) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('path', targetPath);
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    loadFileTree(); // Refresh file tree
+                } else {
+                    alert('Error uploading file: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error uploading file:', error);
+                alert('Error uploading file');
+            }
+        }
+
+        // PDF refresh with retry mechanism
+        function refreshPdfWithRetry(attempt = 1, maxAttempts = 5) {
+            const pdfViewer = document.getElementById('pdf-viewer');
+            const loadingDiv = document.getElementById('pdf-loading');
+            
+            // Update loading text with attempt number
+            const loadingText = loadingDiv.querySelector('div:last-child');
+            loadingText.textContent = `Compiling LaTeX... (Attempt ${attempt}/${maxAttempts})`;
+            
+            pdfViewer.onload = () => {
+                loadingDiv.classList.add('hidden');
+                pdfViewer.style.display = 'block';
+                console.log(`PDF loaded successfully on attempt ${attempt}`);
+            };
+            
+            pdfViewer.onerror = () => {
+                console.log(`PDF load failed on attempt ${attempt}`);
+                if (attempt < maxAttempts) {
+                    // Wait longer between retries (2 seconds * attempt number)
+                    setTimeout(() => {
+                        refreshPdfWithRetry(attempt + 1, maxAttempts);
+                    }, 2000 * attempt);
+                } else {
+                    loadingDiv.classList.add('hidden');
+                    pdfViewer.style.display = 'block';
+                    loadingText.textContent = 'Compiling LaTeX...';
+                    console.log('PDF load failed after all attempts, showing viewer anyway');
+                }
+            };
+            
+            // Force reload with cache busting
+            pdfViewer.src = '/api/pdf?' + new Date().getTime();
+        }
+
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', function() {
+            initEditor();
+            loadFileTree();
+            
+            document.getElementById('save-btn').addEventListener('click', saveFile);
+            document.getElementById('delete-file').addEventListener('click', deleteFile);
+            
+            // Hide context menu when clicking elsewhere
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('#context-menu')) {
+                    hideContextMenu();
+                }
+            });
+            
+            // Close image modal when clicking outside
+            document.getElementById('image-modal').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closeImageModal();
+                }
+            });
+
+            // Close password modal when clicking outside
+            document.getElementById('password-modal').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closePasswordModal();
+                }
+            });
+
+            // Password input enter key support
+            document.getElementById('delete-password').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    confirmDelete();
+                }
+            });
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 's') {
+                    e.preventDefault();
+                    saveFile();
+                }
+                if (e.key === 'Escape') {
+                    closeImageModal();
+                    hideContextMenu();
+                    closePasswordModal();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
