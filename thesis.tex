@@ -1,0 +1,135 @@
+\documentclass[12pt]{report}
+
+% ==== Essential Packages ====
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{caption} 
+\usepackage{array}
+\usepackage{tabularx} 
+\usepackage{fancyhdr}
+\usepackage{changepage}
+\usepackage[round]{natbib}
+\usepackage{enumitem}
+\usepackage{etoolbox}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage[colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue]{hyperref}
+
+\DeclareCaptionFont{englishcaption}{\englishfont}
+
+% ==== Page Layout ====
+\geometry{
+  a4paper,
+  top=1.5cm,
+  bottom=2.0cm,
+  left=2.0cm,
+  right=2.0cm
+}
+
+% ==== Font Setup ====
+
+% Khmer fonts
+\newfontfamily\khmerfont{Khmer OS Muol Light}       % for headings
+\newfontfamily\khmernormal{Khmer OS Siemreap}       % for body text
+
+
+% English font
+\newfontfamily\englishfont{Times New Roman}
+
+% Enable proper line breaking for Khmer
+\XeTeXlinebreaklocale "khmer"
+\XeTeXlinebreakskip = 0pt plus 1pt
+
+\AtBeginEnvironment{tabular}{\sffamily}
+
+\captionsetup{font=englishcaption}
+
+\makeatletter
+\renewenvironment{table}%
+  {%
+    \renewcommand{\familydefault}{\ttdefault}%
+    \selectfont%
+    \@float{table}%
+  }%
+  {\end@float}
+\makeatother
+
+% Center chapter titles
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\centering}
+  {\chaptertitlename\ \thechapter}{5pt}{\Huge}
+
+\title{}
+\author{}
+\date{}
+
+\setmainlanguage{english}
+\SetLanguageKeys{english}{indentfirst=true}
+
+\begin{document}
+
+% === Title Pages ===
+\input{titlepage}
+\thispagestyle{empty}
+
+\input{title_second_page}
+\thispagestyle{empty}
+
+% === Preliminary Pages ===
+\thispagestyle{plain}
+\input{supervisor_statement}
+\newpage
+
+\thispagestyle{plain}
+\input{abstract}
+\newpage
+
+\thispagestyle{plain}
+\input{candidate_statement}
+\newpage
+
+\thispagestyle{plain}
+\input{acknowledgements}
+\newpage
+
+\thispagestyle{plain}
+\input{table_content}
+\newpage
+
+\thispagestyle{plain}
+\input{list_of_tables}
+\newpage
+
+\thispagestyle{plain}
+\input{list_of_figures}
+\newpage
+
+\thispagestyle{plain}
+\input{list_of_abbreviations}
+\newpage
+
+% === Main Body ===
+\pagestyle{plain}
+
+\input{chapters/intro.tex}
+\input{chapters/literature.tex}
+\input{chapters/dataset.tex}
+\input{chapters/experiments.tex}
+\input{chapters/results.tex}
+\input{chapters/development.tex}
+\input{chapters/discussion.tex}
+
+\phantomsection
+\label{ch:references}
+\renewcommand{\bibname}{References}
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+% === Appendix ===
+\input{chapters/appendix.tex}
+
+\end{document}
